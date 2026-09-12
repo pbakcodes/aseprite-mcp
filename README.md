@@ -326,6 +326,26 @@ docker run --rm -i --env-file .env aseprite-mcp:latest
 
 If installed, the binary will be at `/opt/steamapps/common/Aseprite/aseprite` and `ASEPRITE_PATH` will be picked up automatically.
 
+## Continuous Integration
+
+`.github/workflows/live-aseprite-integration.yml` runs the full pytest suite
+against a **real Aseprite**, not a stub. On every push to `main` (and on
+`workflow_dispatch`) the workflow builds `Dockerfile.ci` on the runner, which:
+
+- downloads the official Aseprite **1.3.18.3** source release and the matching
+  official prebuilt **Skia `m124-08a5439a6b`**, verifying a hardcoded SHA-256 for
+  each before extraction (no Skia compilation, no SteamCMD, no Steam credentials);
+- compiles Aseprite with CMake/Ninja and installs the Python dependencies from the
+  committed `uv.lock` with `uv sync --frozen`;
+- runs the suite as a non-root user with `--network none`, `--read-only`,
+  a `/tmp` tmpfs, `--cap-drop ALL` and `--security-opt no-new-privileges`.
+
+The image is **ephemeral**: there is no registry login, no push, no artifact
+upload and no Actions cache, so the compiled Aseprite binary lives only inside
+the runner and is discarded with it. The workflow holds `contents: read` only.
+`Dockerfile.ci` exists purely for this test run and never redistributes Aseprite;
+the regular `Dockerfile` is unrelated to CI.
+
 ## Local Installation
 
 ### Prerequisites

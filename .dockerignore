@@ -1,6 +1,12 @@
 # Git files
 .git
 .gitignore
+.github/
+
+# Secrets / local environment
+.env
+*.env
+!sample.env
 
 # Python cache and artifacts
 __pycache__/

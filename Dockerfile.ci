@@ -1,0 +1,192 @@
+# Ephemeral CI image: a real, self-compiled Aseprite plus the project's
+# Python environment, used only to run the pytest suite inside a GitHub
+# Actions runner. It is never pushed to a registry, never cached and never
+# redistributed; the runner discards it when the job ends.
+#
+# Aseprite is built from its official source release under the Aseprite
+# EULA, which permits compiling from source for personal use. Nothing here
+# redistributes Aseprite binaries or assets.
+#
+# Everything external is pinned: base images by digest, Aseprite and Skia
+# by version tag plus a hardcoded SHA-256 verified before extraction.
+
+# ubuntu:24.04
+ARG UBUNTU_DIGEST=sha256:224a1869083a311ef3f13648a154ba79832fbef6364d31493642ca03082da254
+
+# ---------------------------------------------------------------------------
+# Stage 1 - compile Aseprite against the official prebuilt Skia
+# ---------------------------------------------------------------------------
+FROM ubuntu@${UBUNTU_DIGEST} AS aseprite-builder
+
+# Pinned upstream artifacts. ASEPRITE_VERSION must stay in sync with
+# SKIA_TAG: laf/misc/skia-tag.txt in the Aseprite source tree names the
+# exact Skia build that release expects (m124-08a5439a6b for 1.3.18.3),
+# which is why no Skia compilation is needed here.
+ARG ASEPRITE_VERSION=1.3.18.3
+ARG ASEPRITE_SHA256=268693d1750c4f9f61c9c866f10b993ddfc88424c9dead2a2f66ebb7576b192e
+ARG SKIA_TAG=m124-08a5439a6b
+ARG SKIA_SHA256=a327e89b244f24cecaa34eb37544bae00d447b96c583d26ed29d6a3ad2e8a8b8
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        cmake \
+        curl \
+        libfontconfig1-dev \
+        libfreetype6-dev \
+        libgl1-mesa-dev \
+        libharfbuzz-dev \
+        libpixman-1-dev \
+        libx11-dev \
+        libxcursor-dev \
+        libxi-dev \
+        libxrandr-dev \
+        ninja-build \
+        unzip \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+RUN curl --fail --silent --show-error --location \
+        --output aseprite-source.zip \
+        "https://github.com/aseprite/aseprite/releases/download/v${ASEPRITE_VERSION}/Aseprite-v${ASEPRITE_VERSION}-Source.zip" \
+    && echo "${ASEPRITE_SHA256}  aseprite-source.zip" | sha256sum --check --strict - \
+    && mkdir -p aseprite \
+    && unzip -q aseprite-source.zip -d aseprite \
+    && rm aseprite-source.zip
+
+RUN curl --fail --silent --show-error --location \
+        --output skia.zip \
+        "https://github.com/aseprite/skia/releases/download/${SKIA_TAG}/Skia-Linux-Release-x64.zip" \
+    && echo "${SKIA_SHA256}  skia.zip" | sha256sum --check --strict - \
+    && mkdir -p skia \
+    && unzip -q skia.zip -d skia \
+    && rm skia.zip \
+    && test -f skia/out/Release-x64/libskia.a
+
+# Network-facing and desktop-integration features are disabled: they are
+# dead weight for a batch-mode CI build and cut compile time noticeably.
+RUN cmake -S aseprite -B aseprite/build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DLAF_BACKEND=skia \
+        -DSKIA_DIR=/build/skia \
+        -DSKIA_LIBRARY_DIR=/build/skia/out/Release-x64 \
+        -DSKIA_LIBRARY=/build/skia/out/Release-x64/libskia.a \
+        -DENABLE_SCRIPTING=ON \
+        -DENABLE_CCACHE=OFF \
+        -DENABLE_TESTS=OFF \
+        -DENABLE_BENCHMARKS=OFF \
+        -DENABLE_UPDATER=OFF \
+        -DENABLE_NEWS=OFF \
+        -DENABLE_WEBSOCKET=OFF \
+        -DENABLE_DESKTOP_INTEGRATION=OFF \
+    && cmake --build aseprite/build --target aseprite \
+    && strip aseprite/build/bin/aseprite \
+    && test -d aseprite/build/bin/data
+
+# ---------------------------------------------------------------------------
+# Stage 2 - runtime: Aseprite + uv-managed Python 3.13 + the test suite
+# ---------------------------------------------------------------------------
+FROM ubuntu@${UBUNTU_DIGEST} AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        fonts-dejavu-core \
+        libegl1 \
+        libfontconfig1 \
+        libfreetype6 \
+        libgl1 \
+        libglx-mesa0 \
+        libharfbuzz0b \
+        libpixman-1-0 \
+        libx11-6 \
+        libxcb1 \
+        libxcursor1 \
+        libxext6 \
+        libxfixes3 \
+        libxi6 \
+        libxkbcommon0 \
+        libxrandr2 \
+        libxrender1 \
+        x11-xkb-utils \
+        xauth \
+        xkb-data \
+        xvfb \
+        zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv comes from its own pinned, signed image rather than a curl|bash installer.
+COPY --from=ghcr.io/astral-sh/uv:0.12.5@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1 /uv /usr/local/bin/uv
+
+COPY --from=aseprite-builder /build/aseprite/build/bin /opt/aseprite
+
+# Fail the build (not the test run) if the compiled binary is missing a
+# shared library in this slimmer runtime stage.
+RUN ldd /opt/aseprite/aseprite | tee /tmp/aseprite-ldd.txt \
+    && ! grep -q "not found" /tmp/aseprite-ldd.txt \
+    && rm /tmp/aseprite-ldd.txt
+
+# Prove the self-compiled Aseprite really executes Lua in batch mode before
+# any Python is involved, so a broken build fails loudly and early. The
+# preferred path needs no display at all; xvfb-run is only a fallback in case
+# the Skia laf backend insists on an X connection.
+RUN set -eu; \
+    mkdir -p /tmp/smoke; \
+    printf 'local s = Sprite(4, 4)\ns:saveAs("/tmp/smoke/out.png")\nprint("ASEPRITE_SMOKE_OK")\n' > /tmp/smoke/smoke.lua; \
+    if HOME=/tmp/smoke /opt/aseprite/aseprite --batch --script /tmp/smoke/smoke.lua > /tmp/smoke/log.txt 2>&1 \
+       && grep -q ASEPRITE_SMOKE_OK /tmp/smoke/log.txt; then \
+        echo "aseprite smoke test passed without a display"; \
+    else \
+        echo "headless attempt failed:"; cat /tmp/smoke/log.txt; \
+        echo "retrying under xvfb-run"; \
+        HOME=/tmp/smoke xvfb-run -a /opt/aseprite/aseprite --batch --script /tmp/smoke/smoke.lua > /tmp/smoke/log.txt 2>&1; \
+        cat /tmp/smoke/log.txt; \
+        grep -q ASEPRITE_SMOKE_OK /tmp/smoke/log.txt; \
+    fi; \
+    test -s /tmp/smoke/out.png; \
+    rm -rf /tmp/smoke
+
+ENV ASEPRITE_PATH=/opt/aseprite/aseprite \
+    UV_CACHE_DIR=/tmp/uv-cache \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    UV_PYTHON_INSTALL_DIR=/opt/uv-python
+
+WORKDIR /app
+
+# Dependencies resolve from the committed lock only; --frozen makes uv refuse
+# to re-resolve or update uv.lock.
+COPY pyproject.toml uv.lock .python-version README.md ./
+RUN uv sync --frozen \
+    && rm -rf /tmp/uv-cache
+
+COPY . .
+
+# Set only after uv finished pre-compiling: the test container runs with a
+# read-only root filesystem, so nothing may try to drop .pyc files in /app.
+ENV PYTHONDONTWRITEBYTECODE=1
+
+RUN groupadd --gid 10001 ci \
+    && useradd --uid 10001 --gid 10001 --create-home --home-dir /home/ci ci \
+    && mkdir -p /opt/uv-python \
+    && chmod -R a+rX /app /opt/aseprite /opt/uv-python
+
+USER 10001:10001
+
+# Confirm, while still building, that the unprivileged user can start the
+# locked environment; a permission or interpreter problem then surfaces here
+# instead of halfway through the suite.
+RUN HOME=/home/ci uv run --frozen --no-sync python -c \
+    "import aseprite_mcp.tools; from aseprite_mcp import mcp; print('python env OK')"
+
+# The workflow overrides this to set up HOME and a virtual display first;
+# the default keeps `docker run <image>` meaningful on its own.
+CMD ["uv", "run", "--frozen", "--no-sync", "pytest", "-q", "-p", "no:cacheprovider"]
