@@ -46,11 +46,10 @@ validation, live-binary testing, coverage gates, and focused hardening.
 
 ### Remaining inherited risks / scope
 
-This fork is **not** equivalent to the separately hardened Malloy-based fork.
-It still uses upstream's generated-Lua architecture and intentionally exposes
-`run_lua_script`, which executes arbitrary Aseprite Lua. Run it only through an
-external sandbox with a clean environment, no network access, a hidden `HOME`,
-and a dedicated disposable workspace. See
+This fork still uses upstream's generated-Lua/f-string architecture and
+intentionally exposes `run_lua_script`, which executes arbitrary Aseprite Lua.
+Run it only through an external sandbox with a clean environment, no network
+access, a hidden `HOME`, and a dedicated disposable workspace. See
 [`EVALUATION_FORK.md`](EVALUATION_FORK.md) for the operational threat model and
 required sandbox boundary.
 
