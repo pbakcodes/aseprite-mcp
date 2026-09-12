@@ -3,7 +3,7 @@ import os
 from ..core.commands import AsepriteCommand, lua_escape
 from ..core.inputs import check_extent
 from ..core.lua import FIND_LAYER
-from .analysis import _FLATTEN_FRAME
+from .analysis import FLATTEN_VISIBLE, _FLATTEN_FRAME
 from .. import mcp
 
 
@@ -195,13 +195,13 @@ async def get_composite_pixel(filename: str, x: int, y: int, frame_index: int = 
         return f"File {filename} not found"
 
     script = f"""
+    {FLATTEN_VISIBLE}
     {_FLATTEN_FRAME}
     local spr = app.activeSprite
     if not spr then print("ERROR:No active sprite") return end
     local idx = {frame_index}
     if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
-    local clone = Sprite(spr)
-    clone:flatten()
+    local clone = flatten_visible(spr)
     local img = flatten_frame(clone, idx, nil)
     local r, g, b, a = 0, 0, 0, 0
     if {x} >= 0 and {y} >= 0 and {x} < img.width and {y} < img.height then
@@ -259,13 +259,13 @@ async def get_composite_rect(
 
     x_end, y_end = x + width - 1, y + height - 1
     script = f"""
+    {FLATTEN_VISIBLE}
     {_FLATTEN_FRAME}
     local spr = app.activeSprite
     if not spr then print("ERROR:No active sprite") return end
     local idx = {frame_index}
     if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
-    local clone = Sprite(spr)
-    clone:flatten()
+    local clone = flatten_visible(spr)
     local img = flatten_frame(clone, idx, nil)
     local iw, ih = img.width, img.height
     for py = {y}, {y_end} do

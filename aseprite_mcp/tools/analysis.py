@@ -6,6 +6,25 @@ from .. import mcp
 # Render a frame of the (cloned, flattened) sprite into a canvas-sized
 # RGB image. Used by the analysis tools so layer offsets and trimmed
 # cels do not skew results.
+# Flatten a throwaway clone the way a viewer sees it.
+#
+# Sprite:flatten() merges EVERY layer, hidden ones included, so a composite
+# read of a sprite with a hidden layer used to report the hidden colour --
+# the opposite of "what the player actually sees". Hidden layers are dropped
+# from the clone first. (FlattenLayers{visibleOnly=true} is not enough: it
+# leaves the hidden layers in place above the merged result.)
+FLATTEN_VISIBLE = """
+local function flatten_visible(spr)
+    local clone = Sprite(spr)
+    for i = #clone.layers, 1, -1 do
+        local layer = clone.layers[i]
+        if not layer.isVisible then clone:deleteLayer(layer) end
+    end
+    if #clone.layers > 0 then clone:flatten() end
+    return clone
+end
+"""
+
 _FLATTEN_FRAME = """
 local function flatten_frame(clone, frame_idx, bg)
     local layer = clone.layers[#clone.layers]
@@ -69,6 +88,7 @@ async def render_onion_skin(
 
     safe_out = lua_escape(os.path.abspath(output_filename).replace("\\", "/"))
     script = f"""
+    {FLATTEN_VISIBLE}
     {_FLATTEN_FRAME}
     local spr = app.activeSprite
     if not spr then print("ERROR:No active sprite") return end
@@ -76,8 +96,7 @@ async def render_onion_skin(
     local idx = {frame_index}
     if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
 
-    local clone = Sprite(spr)
-    clone:flatten()
+    local clone = flatten_visible(spr)
 
     local white = app.pixelColor.rgba(255, 255, 255, 255)
     local comp = Image(clone.width, clone.height, ColorMode.RGB)
@@ -149,6 +168,7 @@ async def compare_frames(filename: str, frame_a: int, frame_b: int) -> str:
         return f"File {filename} not found"
 
     script = f"""
+    {FLATTEN_VISIBLE}
     {_FLATTEN_FRAME}
     local spr = app.activeSprite
     if not spr then print("ERROR:No active sprite") return end
@@ -159,8 +179,7 @@ async def compare_frames(filename: str, frame_a: int, frame_b: int) -> str:
         print("ERROR:Frame index out of range") return
     end
 
-    local clone = Sprite(spr)
-    clone:flatten()
+    local clone = flatten_visible(spr)
 
     local img_a = flatten_frame(clone, a, nil)
     local img_b = flatten_frame(clone, b, nil)
@@ -248,6 +267,7 @@ async def get_color_stats(filename: str, frame_index: int = 1, top: int = 16) ->
         return "top must be >= 1"
 
     script = f"""
+    {FLATTEN_VISIBLE}
     {_FLATTEN_FRAME}
     local spr = app.activeSprite
     if not spr then print("ERROR:No active sprite") return end
@@ -255,8 +275,7 @@ async def get_color_stats(filename: str, frame_index: int = 1, top: int = 16) ->
     local idx = {frame_index}
     if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
 
-    local clone = Sprite(spr)
-    clone:flatten()
+    local clone = flatten_visible(spr)
     local img = flatten_frame(clone, idx, nil)
 
     local counts = {{}}
