@@ -2,10 +2,12 @@ name: Live Aseprite integration
 
 # Runs the whole pytest suite against a real, self-compiled Aseprite inside an
 # ephemeral container, measuring branch coverage of aseprite_mcp in the same
-# run and failing on a coverage regression. Nothing is published: no registry
-# login, no image push, no artifact upload, no coverage service and no Actions
-# cache, so the compiled Aseprite binary and the coverage data exist only for
-# the lifetime of the runner.
+# run. Two gates guard it: --cov-fail-under for the project total, and a
+# per-file floor so a single module cannot rot behind a healthy total.
+#
+# Nothing is published: no registry login, no image push, no artifact upload,
+# no coverage service and no Actions cache, so the compiled Aseprite binary
+# and the coverage data exist only for the lifetime of the runner.
 #
 # This fork works directly on main, so push-to-main is the intended trigger.
 
@@ -61,11 +63,13 @@ jobs:
       # confirms this Aseprite build runs --batch scripts with no display.
       #
       # Coverage is measured in the same run: branch coverage over
-      # aseprite_mcp, term-missing report, and --cov-fail-under as the
-      # regression gate. COVERAGE_FILE points at the tmpfs because /app is
-      # read-only, and the report is tee'd so the full output stays in the
-      # job log while the TOTAL row feeds the step summary. Nothing leaves
-      # the runner: no upload, no artifact, no third-party service.
+      # aseprite_mcp, a term-missing report for the log, and a JSON report
+      # the per-file gate reads back. COVERAGE_FILE and the JSON output
+      # point at the tmpfs because /app is read-only, and the whole run is
+      # tee'd so the full terminal output stays in the job log while the
+      # TOTAL row feeds the step summary. The JSON report is copied out of
+      # the container through a bind-mounted directory on the runner and is
+      # deleted with the workspace; nothing is uploaded anywhere.
       - name: Run pytest with coverage against real Aseprite
         id: tests
         shell: bash
@@ -73,24 +77,38 @@ jobs:
           set -euo pipefail
           start=$(date +%s)
           status=0
+          # The container runs as uid 10001 and its root filesystem is
+          # read-only, so the one path it may write outside the tmpfs is this
+          # bind mount. It lives in RUNNER_TEMP on an ephemeral runner and is
+          # discarded with the job; the JSON never leaves the machine.
+          mkdir -p "${RUNNER_TEMP}/coverage"
+          chmod 0777 "${RUNNER_TEMP}/coverage"
           docker run --rm \
             --network none \
             --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=1g \
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
+            --volume "${RUNNER_TEMP}/coverage:/out" \
             --env HOME=/tmp/home \
             --env ASEPRITE_PATH=/opt/aseprite/aseprite \
             --env COVERAGE_FILE=/tmp/.coverage \
             "aseprite-mcp-ci:${GITHUB_SHA}" \
-            sh -euc '
+            sh -uc '
+              set -e
               mkdir -p /tmp/home
               "$ASEPRITE_PATH" --version
-              exec uv run --frozen --no-sync pytest -q -p no:cacheprovider \
+              set +e
+              uv run --frozen --no-sync pytest -q -p no:cacheprovider \
                 --cov=aseprite_mcp \
                 --cov-branch \
                 --cov-report=term-missing:skip-covered \
-                --cov-fail-under=55
+                --cov-report=json:/tmp/coverage.json \
+                --cov-fail-under=93
+              pytest_status=$?
+              # copied out even on failure so the per-file gate can still run
+              cp /tmp/coverage.json /out/coverage.json 2>/dev/null || true
+              exit $pytest_status
             ' 2>&1 | tee /tmp/coverage.txt || status=$?
           duration=$(( $(date +%s) - start ))
           echo "test_seconds=${duration}" >> "$GITHUB_OUTPUT"
@@ -113,10 +131,37 @@ jobs:
             else
               echo "- no TOTAL row in the coverage report; see the job log"
             fi
-            echo "- gate: \`--cov-fail-under=55\`"
+            echo "- project gate: \`--cov-fail-under=93\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+          echo "pytest_status=${status}" >> "$GITHUB_OUTPUT"
           exit "${status}"
+
+      # The project-wide gate can be satisfied while one module rots, so the
+      # same coverage data is re-read per file. This runs even when pytest
+      # failed, so a run reports both problems at once, and its own status is
+      # combined with pytest's rather than replacing it. Pure stdlib, no
+      # network, no third-party service.
+      - name: Enforce the per-file coverage floor
+        if: always() && steps.tests.outcome != 'skipped'
+        shell: bash
+        run: |
+          set -uo pipefail
+          report="${RUNNER_TEMP}/coverage/coverage.json"
+          if [ ! -f "${report}" ]; then
+            echo "no coverage JSON was produced; see the test step" >&2
+            echo "- per-file gate: no coverage report produced" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          python3 scripts/check_file_coverage.py "${report}" \
+            --summary "$GITHUB_STEP_SUMMARY"
+          gate_status=$?
+          pytest_status="${{ steps.tests.outputs.pytest_status }}"
+          echo "per-file gate exit ${gate_status}, pytest exit ${pytest_status:-unknown}"
+          if [ "${gate_status}" -ne 0 ]; then exit "${gate_status}"; fi
+          if [ -n "${pytest_status:-}" ] && [ "${pytest_status}" -ne 0 ]; then
+            exit "${pytest_status}"
+          fi
 
       - name: Discard image
         if: always()

@@ -28,7 +28,8 @@ omit = ["aseprite_mcp/__main__.py"]
 [tool.coverage.report]
 show_missing = true
 precision = 2
-# Conservative regression gate: the live-Aseprite suite currently measures
-# 56.72% combined statement+branch coverage, so 55 leaves ~1.7 points of slack
-# for run-to-run variation while still failing on a real coverage regression.
-fail_under = 55
+# The live-Aseprite suite measures ~98% combined statement+branch coverage.
+# 93 is the contracted floor with a deliberate margin: it fails on a real
+# regression without tripping on run-to-run variation in the handful of
+# environment-dependent branches (font discovery, /proc process identity).
+fail_under = 93
