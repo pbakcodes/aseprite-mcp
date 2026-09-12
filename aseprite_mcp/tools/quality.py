@@ -634,18 +634,22 @@ async def animation_sanitize(
                 end
             end
             local ordered = {{}}
+            -- Keyed by stack position, not by the layer object: Aseprite's
+            -- Lua wrappers compare equal with == but are distinct table keys,
+            -- so a layer-keyed `seen` never matched and every layer was
+            -- appended twice, which silently undid the whole reorder.
             local seen = {{}}
             for _, name in ipairs(order_names) do
-                for _, layer in ipairs(spr.layers) do
-                    if layer.name == name and not layer.isGroup and not seen[layer] then
+                for i, layer in ipairs(spr.layers) do
+                    if layer.name == name and not layer.isGroup and not seen[i] then
                         table.insert(ordered, layer)
-                        seen[layer] = true
+                        seen[i] = true
                         break
                     end
                 end
             end
-            for _, layer in ipairs(spr.layers) do
-                if not layer.isGroup and not seen[layer] then
+            for i, layer in ipairs(spr.layers) do
+                if not layer.isGroup and not seen[i] then
                     table.insert(ordered, layer)
                 end
             end

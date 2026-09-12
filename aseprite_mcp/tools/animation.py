@@ -595,9 +595,10 @@ async def copy_cel(
     local target = find_layer(spr, "{safe_layer_name}")
     if not target then print("ERROR:Layer not found") return end
 
+    local src = target:cel(spr.frames[src_idx])
+    if not src then print("ERROR:Source frame has no cel on this layer") return end
+
     app.transaction(function()
-        local src = target:cel(spr.frames[src_idx])
-        if not src then return end
         local dst = target:cel(spr.frames[dst_idx])
         if dst and {replace_flag} then
             spr:deleteCel(dst)
@@ -640,12 +641,15 @@ async def copy_frame(
     if src_idx < 1 or src_idx > #spr.frames then print("ERROR:Source frame out of range") return end
 
     local dst_idx = {target_idx}
+    if dst_idx ~= nil and (dst_idx < 1 or dst_idx > #spr.frames) then
+        print("ERROR:Target frame out of range") return
+    end
+
     app.transaction(function()
         local dst_frame = nil
         if dst_idx == nil then
             dst_frame = spr:newFrame()
         else
-            if dst_idx < 1 or dst_idx > #spr.frames then return end
             dst_frame = spr.frames[dst_idx]
             if {overwrite_flag} then
                 for _, layer in ipairs(spr.layers) do
@@ -660,7 +664,9 @@ async def copy_frame(
         for _, layer in ipairs(spr.layers) do
             if not layer.isGroup then
                 local cel = layer:cel(spr.frames[src_idx])
-                if cel then
+                -- newCel always replaces, so overwrite=false has to skip the
+                -- layer itself rather than rely on the call being a no-op.
+                if cel and ({overwrite_flag} or not layer:cel(dst_frame)) then
                     local img = cel.image:clone()
                     spr:newCel(layer, dst_frame, img, cel.position)
                 end
@@ -728,7 +734,9 @@ async def propagate_frame_to_range(
                 for _, layer in ipairs(spr.layers) do
                     if not layer.isGroup then
                         local src_cel = layer:cel(spr.frames[src_idx])
-                        if src_cel then
+                        -- newCel always replaces, so overwrite=false has to
+                        -- skip the layer rather than rely on a no-op call.
+                        if src_cel and ({overwrite_flag} or not layer:cel(dst_frame)) then
                             local img = src_cel.image:clone()
                             spr:newCel(layer, dst_frame, img, src_cel.position)
                         end
