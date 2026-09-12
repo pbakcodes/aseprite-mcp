@@ -271,7 +271,7 @@ Batch-mode equivalents of what a human artist gets from the Aseprite UI.
 
 | Tool | Description |
 |------|-------------|
-| `start_preview_server` / `stop_preview_server` | Serve exported files over local HTTP |
+| `start_preview_server` / `stop_preview_server` | Serve exported files over local HTTP. Binds `127.0.0.1` only, so the served directory is not reachable from other machines, and only ever signals a process it started itself. |
 | `animation_workflow_guide` | Returns a step-by-step workflow guide for the LLM |
 
 ### Scripting
@@ -345,6 +345,45 @@ upload and no Actions cache, so the compiled Aseprite binary lives only inside
 the runner and is discarded with it. The workflow holds `contents: read` only.
 `Dockerfile.ci` exists purely for this test run and never redistributes Aseprite;
 the regular `Dockerfile` is unrelated to CI.
+
+### Coverage gates
+
+The same run measures combined statement+branch coverage of `aseprite_mcp`
+and enforces two floors:
+
+- **project total** — `--cov-fail-under=93`, with `fail_under = 93` mirrored in
+  `pyproject.toml` so a local run fails the same way;
+- **per file** — `scripts/check_file_coverage.py` re-reads the run's coverage
+  JSON and requires every functional module under `aseprite_mcp/core/` and
+  `aseprite_mcp/tools/` to clear **80%**, with `tools/guide.py` held to 100%.
+  It is pure stdlib, needs no network and no coverage service, and its
+  exemption list is empty (a test asserts it stays that way).
+
+Both gates read the same in-run coverage data; nothing is uploaded anywhere.
+
+### Test suite
+
+Roughly 1,600 tests run against the real binary. They are grouped by what they
+prove rather than by module:
+
+| Area | Files |
+| --- | --- |
+| Tool contracts, driven by the MCP registry itself | `test_tool_contracts.py` |
+| Security regressions (Lua injection, path handling, preview lifecycle) | `test_security_injection.py`, `test_path_safety.py`, `test_preview_server.py` |
+| Resource bounds on caller-supplied counts and extents | `test_resource_limits.py` |
+| Drawing, canvas and transforms, verified pixel by pixel | `test_drawing_shapes.py`, `test_canvas_transform.py` |
+| Cels, frames and tweens, verified on the intermediate frames | `test_animation_cels.py`, `test_animation_tweens.py` |
+| QA reports parsed as JSON | `test_quality_reports.py` |
+| Exports reopened with Pillow | `test_export_formats.py` |
+| Fonts and text | `test_fonts.py`, `test_text_drawing.py` |
+| Remaining tool surfaces and error paths | `test_tool_surfaces.py` |
+| The coverage gate itself | `test_coverage_gate.py` |
+
+`tests/test_tool_contracts.py` is registry-driven: it enumerates every tool
+registered with the FastMCP server and asserts the guarantees that hold for
+all of them, so a tool added later is covered on the day it lands. Mocking is
+confined to seams that cannot be exercised safely — the Windows-only preview
+branch, and subprocess failures that a working Aseprite will not produce.
 
 ## Local Installation
 
