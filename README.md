@@ -2,7 +2,7 @@
 
 A Python MCP server that gives AI assistants full control over [Aseprite](https://www.aseprite.org/) for creating pixel art and animated sprites.
 
-**104 tools across 17 categories** — canvas, drawing, layers, animation, palettes, effects, slices, tilemaps, exports, visual-feedback/analysis tools, and a raw Lua escape hatch. The tool set is designed so an LLM has everything it needs to produce *good* pixel art, not just primitives: shading ramps with hue shifting, ordered dithering, outlines, retro palette presets with quantization, onion-skin renders, and frame diffing for animation work.
+**116 tools across 18 categories** — canvas, drawing, layers, animation, palettes, effects, slices, tilemaps, exports, visual-feedback/analysis tools, and a raw Lua escape hatch. The tool set is designed so an LLM has everything it needs to produce *good* pixel art, not just primitives: shading ramps with hue shifting, ordered dithering, outlines, retro palette presets with quantization, onion-skin renders, and frame diffing for animation work.
 
 ## Example: a swordsman, drawn and animated by Claude
 
@@ -29,19 +29,19 @@ Both were created end-to-end by Claude Fable 5 through this server's MCP tools �
 
 | Category | Tools | Description |
 |----------|------:|-------------|
-| [Canvas](#canvas) | 6 | Create sprites, manage layers/frames, set the active state |
+| [Canvas](#canvas) | 7 | Create sprites, manage layers/frames, set the active state |
 | [Drawing](#drawing) | 14 | Pixels, lines, rectangles, circles, ellipses, polygons, paths, fills, gradients |
 | [Text](#text) | 3 | Draw and measure text with bitmap sprite-sheet or TrueType fonts |
 | [Layers](#layers) | 7 | Delete, rename, duplicate, reorder, blend modes, merge, flatten |
 | [Selection & Regions](#selection--regions) | 4 | Move, copy, and erase rectangular regions or colors |
-| [Effects](#effects) | 5 | Outlines, color replacement, HSL adjustment, ordered dithering |
+| [Effects](#effects) | 12 | Native and pixel-oriented outlines, color adjustments, dithering, convolution |
 | [Animation](#animation) | 24 | Frames, cels, tags, tweening with easing, propagation |
 | [Palette](#palette) | 8 | Get/set palettes, retro presets, color ramps, quantization, color modes |
 | [Transform](#transform) | 4 | Flip, rotate, resize, crop |
 | [Slices](#slices) | 5 | Named regions, 9-patch centers, pivot points |
 | [Tilemap](#tilemap) | 5 | Tilemap layers, tileset editing, tile placement |
 | [Export & Import](#export--import) | 7 | PNG, GIF, sprite sheets, per-layer/per-tag export, image import |
-| [Inspection](#inspection) | 3 | Read pixels and sprite metadata |
+| [Inspection](#inspection) | 4 | Read cel and composited pixels |
 | [Analysis & Visual Feedback](#analysis--visual-feedback) | 3 | Onion-skin renders, frame diffing, color statistics |
 | [Quality](#quality) | 4 | Validate and sanitize animation consistency |
 | [Scene](#scene) | 1 | Copy layers between sprite files |
@@ -155,6 +155,13 @@ The pixel-art toolbox: clean outlines, palette-respecting blends, and shading va
 | `adjust_hsl` | Shift hue/saturation/lightness of a cel — palette swaps, night scenes, shadows |
 | `apply_dither_gradient` | Two-color gradient using Bayer 4×4 ordered dithering |
 | `apply_dither_pattern` | Uniform dithered mix of two colors at a given density |
+| `outline_native` | Native Aseprite outline with inside/outside placement and circle/square brushes |
+| `adjust_hsl_native` | Native hue, saturation, and lightness adjustment |
+| `adjust_brightness_contrast` | Native brightness and contrast adjustment |
+| `invert_colors` | Native color inversion |
+| `apply_convolution` | Native blur, sharpen, edge, emboss, and other convolution filters |
+| `list_convolution_matrices` | List built-in matrices accepted by `apply_convolution` |
+| `extract_palette` | Extract an optimal palette from the sprite |
 
 ### Animation
 
@@ -240,7 +247,8 @@ The pixel-art toolbox: clean outlines, palette-respecting blends, and shading va
 |------|-------------|
 | `get_pixel_color` | Read one pixel's RGBA |
 | `get_pixels_rect` | Read a rectangle of pixels as JSON |
-| `get_sprite_info` | Sprite metadata (also listed under Animation) |
+| `get_composite_pixel` | Read one composited pixel across visible layers |
+| `get_composite_rect` | Read a composited rectangle across visible layers |
 
 ### Analysis & Visual Feedback
 
