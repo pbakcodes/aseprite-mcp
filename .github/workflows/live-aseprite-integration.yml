@@ -1,9 +1,11 @@
 name: Live Aseprite integration
 
 # Runs the whole pytest suite against a real, self-compiled Aseprite inside an
-# ephemeral container. Nothing is published: no registry login, no image push,
-# no artifact upload and no Actions cache, so the compiled Aseprite binary
-# exists only for the lifetime of the runner.
+# ephemeral container, measuring branch coverage of aseprite_mcp in the same
+# run and failing on a coverage regression. Nothing is published: no registry
+# login, no image push, no artifact upload, no coverage service and no Actions
+# cache, so the compiled Aseprite binary and the coverage data exist only for
+# the lifetime of the runner.
 #
 # This fork works directly on main, so push-to-main is the intended trigger.
 
@@ -21,7 +23,7 @@ concurrency:
 
 jobs:
   live-aseprite:
-    name: Compile Aseprite 1.3.18.3 and run pytest
+    name: Compile Aseprite 1.3.18.3 and run pytest with coverage
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -57,10 +59,20 @@ jobs:
       # Lua-scriptable Aseprite from touching anything but the /tmp tmpfs.
       # No X server is involved: the Dockerfile's build-time smoke check
       # confirms this Aseprite build runs --batch scripts with no display.
-      - name: Run pytest against real Aseprite
+      #
+      # Coverage is measured in the same run: branch coverage over
+      # aseprite_mcp, term-missing report, and --cov-fail-under as the
+      # regression gate. COVERAGE_FILE points at the tmpfs because /app is
+      # read-only, and the report is tee'd so the full output stays in the
+      # job log while the TOTAL row feeds the step summary. Nothing leaves
+      # the runner: no upload, no artifact, no third-party service.
+      - name: Run pytest with coverage against real Aseprite
         id: tests
+        shell: bash
         run: |
+          set -euo pipefail
           start=$(date +%s)
+          status=0
           docker run --rm \
             --network none \
             --read-only \
@@ -69,19 +81,42 @@ jobs:
             --security-opt no-new-privileges:true \
             --env HOME=/tmp/home \
             --env ASEPRITE_PATH=/opt/aseprite/aseprite \
+            --env COVERAGE_FILE=/tmp/.coverage \
             "aseprite-mcp-ci:${GITHUB_SHA}" \
             sh -euc '
               mkdir -p /tmp/home
               "$ASEPRITE_PATH" --version
-              exec uv run --frozen --no-sync pytest -q -p no:cacheprovider
-            '
+              exec uv run --frozen --no-sync pytest -q -p no:cacheprovider \
+                --cov=aseprite_mcp \
+                --cov-branch \
+                --cov-report=term-missing:skip-covered \
+                --cov-fail-under=55
+            ' 2>&1 | tee /tmp/coverage.txt || status=$?
           duration=$(( $(date +%s) - start ))
           echo "test_seconds=${duration}" >> "$GITHUB_OUTPUT"
-          echo "test run took ${duration}s"
+          echo "test run took ${duration}s (pytest exit ${status})"
+
+          total_row=$(awk '$1 == "TOTAL" { print; exit }' /tmp/coverage.txt)
+          pytest_row=$(grep -Eo '[0-9]+ (passed|failed)[^$]*' /tmp/coverage.txt | tail -1 || true)
           {
             echo "### Test run"
             echo "- duration: ${duration}s"
+            echo "- pytest: ${pytest_row:-see job log}"
+            echo ""
+            echo "### Coverage (branch, \`aseprite_mcp\`)"
+            if [ -n "${total_row}" ]; then
+              echo ""
+              echo "| Stmts | Miss | Branch | BrPart | Cover |"
+              echo "| ----: | ---: | -----: | -----: | ----: |"
+              echo "${total_row}" | awk '{ printf "| %s | %s | %s | %s | %s |\n", $2, $3, $4, $5, $6 }'
+              echo ""
+            else
+              echo "- no TOTAL row in the coverage report; see the job log"
+            fi
+            echo "- gate: \`--cov-fail-under=55\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "${status}"
 
       - name: Discard image
         if: always()

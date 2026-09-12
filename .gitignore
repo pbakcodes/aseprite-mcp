@@ -23,6 +23,10 @@ wheels/
 .installed.cfg
 *.egg
 
+# Coverage
+.coverage
+.coverage.*
+
 # Virtual Environment
 venv/
 ENV/

@@ -13,4 +13,22 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
 ]
+
+[tool.coverage.run]
+source = ["aseprite_mcp"]
+branch = true
+# Only the console-script shim is omitted: it is a four-line entrypoint whose
+# body is an `if __name__ == "__main__"` guard that starts the stdio server,
+# so it can never execute under pytest. Every functional module stays measured,
+# including the weakly covered ones.
+omit = ["aseprite_mcp/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+# Conservative regression gate: the live-Aseprite suite currently measures
+# 56.72% combined statement+branch coverage, so 55 leaves ~1.7 points of slack
+# for run-to-run variation while still failing on a real coverage regression.
+fail_under = 55
