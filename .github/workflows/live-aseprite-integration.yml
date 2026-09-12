@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
@@ -45,6 +45,7 @@ jobs:
           echo "build_seconds=${duration}" >> "$GITHUB_OUTPUT"
           size=$(docker image inspect "aseprite-mcp-ci:${GITHUB_SHA}" --format '{{.Size}}')
           echo "image_size=${size}" >> "$GITHUB_OUTPUT"
+          echo "image built in ${duration}s, size $(( size / 1024 / 1024 )) MiB"
           {
             echo "### Image build"
             echo "- duration: ${duration}s"
@@ -54,6 +55,8 @@ jobs:
       # --network none proves the suite never reaches the internet, and the
       # read-only root filesystem plus dropped capabilities keep a real,
       # Lua-scriptable Aseprite from touching anything but the /tmp tmpfs.
+      # No X server is involved: the Dockerfile's build-time smoke check
+      # confirms this Aseprite build runs --batch scripts with no display.
       - name: Run pytest against real Aseprite
         id: tests
         run: |
@@ -68,25 +71,13 @@ jobs:
             --env ASEPRITE_PATH=/opt/aseprite/aseprite \
             "aseprite-mcp-ci:${GITHUB_SHA}" \
             sh -euc '
-              mkdir -p /tmp/home /tmp/.X11-unix
-              Xvfb :99 -screen 0 320x240x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
-              waited=0
-              while [ ! -e /tmp/.X11-unix/X99 ] && [ "$waited" -lt 100 ]; do
-                waited=$((waited + 1))
-                sleep 0.1
-              done
-              if [ -e /tmp/.X11-unix/X99 ]; then
-                export DISPLAY=:99
-                echo "virtual display ready on :99"
-              else
-                echo "Xvfb unavailable, running fully headless"
-                cat /tmp/xvfb.log || true
-              fi
-              "$ASEPRITE_PATH" --version || echo "aseprite --version reported a failure"
+              mkdir -p /tmp/home
+              "$ASEPRITE_PATH" --version
               exec uv run --frozen --no-sync pytest -q -p no:cacheprovider
             '
           duration=$(( $(date +%s) - start ))
           echo "test_seconds=${duration}" >> "$GITHUB_OUTPUT"
+          echo "test run took ${duration}s"
           {
             echo "### Test run"
             echo "- duration: ${duration}s"

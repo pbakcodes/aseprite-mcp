@@ -115,10 +115,6 @@ RUN apt-get update \
         libxkbcommon0 \
         libxrandr2 \
         libxrender1 \
-        x11-xkb-utils \
-        xauth \
-        xkb-data \
-        xvfb \
         zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
@@ -134,22 +130,16 @@ RUN ldd /opt/aseprite/aseprite | tee /tmp/aseprite-ldd.txt \
     && rm /tmp/aseprite-ldd.txt
 
 # Prove the self-compiled Aseprite really executes Lua in batch mode before
-# any Python is involved, so a broken build fails loudly and early. The
-# preferred path needs no display at all; xvfb-run is only a fallback in case
-# the Skia laf backend insists on an X connection.
+# any Python is involved, so a broken build fails loudly and early. This also
+# pins down the assumption the test step relies on: with LAF_BACKEND=skia and
+# --batch, Aseprite needs no X connection, so no Xvfb runs in the sandbox.
 RUN set -eu; \
     mkdir -p /tmp/smoke; \
     printf 'local s = Sprite(4, 4)\ns:saveAs("/tmp/smoke/out.png")\nprint("ASEPRITE_SMOKE_OK")\n' > /tmp/smoke/smoke.lua; \
-    if HOME=/tmp/smoke /opt/aseprite/aseprite --batch --script /tmp/smoke/smoke.lua > /tmp/smoke/log.txt 2>&1 \
-       && grep -q ASEPRITE_SMOKE_OK /tmp/smoke/log.txt; then \
-        echo "aseprite smoke test passed without a display"; \
-    else \
-        echo "headless attempt failed:"; cat /tmp/smoke/log.txt; \
-        echo "retrying under xvfb-run"; \
-        HOME=/tmp/smoke xvfb-run -a /opt/aseprite/aseprite --batch --script /tmp/smoke/smoke.lua > /tmp/smoke/log.txt 2>&1; \
-        cat /tmp/smoke/log.txt; \
-        grep -q ASEPRITE_SMOKE_OK /tmp/smoke/log.txt; \
-    fi; \
+    HOME=/tmp/smoke /opt/aseprite/aseprite --batch --script /tmp/smoke/smoke.lua > /tmp/smoke/log.txt 2>&1 \
+        || (echo "aseprite failed to run headless:"; cat /tmp/smoke/log.txt; exit 1); \
+    cat /tmp/smoke/log.txt; \
+    grep -q ASEPRITE_SMOKE_OK /tmp/smoke/log.txt; \
     test -s /tmp/smoke/out.png; \
     rm -rf /tmp/smoke
 

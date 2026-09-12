@@ -64,9 +64,10 @@ The suite runs with:
 HOME=/tmp/home ASEPRITE_PATH=/opt/aseprite/aseprite
 ```
 
-A short-lived `Xvfb` display is started inside the container because the Skia
-laf backend may expect an X connection to be available; it listens on a UNIX
-socket only (`-nolisten tcp`) and the container has no network at all.
+No X server runs inside the sandbox. `Dockerfile.ci` contains a build-time
+smoke check that executes a Lua script through `aseprite --batch` with no
+`DISPLAY` at all, so the assumption that the Skia laf backend works headless
+is verified on every build rather than assumed.
 
 MCP functionality and the project's security behaviour are unchanged. The only
 test-suite addition is `tests/test_mcp_registry.py`, a smoke check that the
