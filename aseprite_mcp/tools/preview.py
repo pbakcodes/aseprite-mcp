@@ -49,27 +49,39 @@ def _read_pid_file(path: str) -> dict | None:
     return data
 
 
-def _process_cmdline(pid: int) -> str | None:
-    """Best-effort command line of a running process, or None if unknown."""
+def _process_argv(pid: int) -> list[str] | None:
+    """Argument vector of a running process, or None when it is unknowable.
+
+    On Linux this is read from /proc as real argv tokens, so the identity
+    check below can compare whole arguments instead of substrings (a port
+    number matches far too eagerly as a substring of a path).
+
+    Windows exposes no argv to an unprivileged caller, so `tasklist` gives
+    only the image name. That is the platform's ceiling: the check there
+    degrades to "a live python process", which is recorded in the tests.
+    """
     if os.name == "nt":
         result = subprocess.run(
-            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/V"],
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
             check=False,
             capture_output=True,
             text=True,
         )
         output = result.stdout or ""
-        return output if str(pid) in output else None
+        if str(pid) not in output:
+            return None
+        return [field.strip('" ') for field in output.split(",")]
     try:
         with open(f"/proc/{pid}/cmdline", "rb") as handle:
-            return handle.read().decode("utf-8", "replace")
+            raw = handle.read()
     except OSError:
         return None
+    return [part for part in raw.decode("utf-8", "replace").split("\0") if part]
 
 
 def _pid_is_running(pid: int) -> bool:
     if os.name == "nt":
-        return _process_cmdline(pid) is not None
+        return _process_argv(pid) is not None
     try:
         os.kill(pid, 0)
         return True
@@ -80,21 +92,24 @@ def _pid_is_running(pid: int) -> bool:
 def _is_our_server(pid: int, state: dict) -> bool:
     """True when `pid` is alive and still looks like our preview server.
 
-    The recorded port and directory are read back from the live process's
-    command line. Where that command line cannot be read (a PID owned by
-    another user, a platform without /proc) the process counts as foreign
-    and is left untouched, which is what stops a planted PID file from
-    having us signal an unrelated process.
+    The recorded port and directory are compared against the live process's
+    own argument vector. Where that cannot be read (a PID owned by another
+    user, a platform without /proc) the process counts as foreign and is
+    left untouched, which is what stops a planted PID file from having us
+    signal an unrelated process.
     """
     if not _pid_is_running(pid):
         return False
-    cmdline = _process_cmdline(pid)
-    if not cmdline:
+    argv = _process_argv(pid)
+    if not argv:
         return False
+    if os.name == "nt":
+        # No argv available; the most we can assert is a live Python image.
+        return any("python" in field.lower() for field in argv)
     return (
-        "http.server" in cmdline
-        and str(state.get("port", "")) in cmdline
-        and str(state.get("directory", "")) in cmdline
+        "http.server" in argv
+        and str(state.get("port", "")) in argv
+        and str(state.get("directory", "")) in argv
     )
 
 

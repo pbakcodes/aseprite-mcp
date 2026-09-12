@@ -27,10 +27,17 @@ async def create_canvas(width: int, height: int, filename: str = "canvas.aseprit
 
     success, output = AsepriteCommand.execute_lua_script_checked(script)
 
-    if success:
-        return f"Canvas created successfully: {filename}"
-    else:
+    if not success:
         return f"Failed to create canvas: {output}"
+    # Aseprite's saveAs neither raises nor sets an exit code when the
+    # destination is unwritable, so an existence check is the only thing
+    # standing between the caller and a fabricated "created" reply.
+    if not os.path.exists(filename):
+        return (
+            f"Failed to create canvas: Aseprite exited 0 but wrote no file "
+            f"to {filename}"
+        )
+    return f"Canvas created successfully: {filename}"
 
 @mcp.tool()
 async def add_layer(filename: str, layer_name: str, group: str = "") -> str:
