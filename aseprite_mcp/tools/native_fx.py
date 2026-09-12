@@ -13,7 +13,7 @@ import os
 
 from ..core.commands import AsepriteCommand, lua_escape
 from ..core.native import build_native_command_script
-from .fx import _parse_hex_color
+from ..core.colors import parse_hex_rgb
 from .. import mcp
 
 # Built-in convolution-matrix resource names (Aseprite data/convmatr.def).
@@ -61,7 +61,7 @@ async def outline_native(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_rgb(color)
     if not rgb:
         return "Invalid color (expected #RRGGBB)"
     if place not in ("outside", "inside"):

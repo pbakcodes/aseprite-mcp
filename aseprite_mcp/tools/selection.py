@@ -1,14 +1,8 @@
 import os
 from ..core.commands import AsepriteCommand, lua_escape
 from ..core.lua import FIND_LAYER, NORMALIZE_CEL, PSET
-from ..core.colors import parse_hex_color
+from ..core.colors import parse_hex_rgb
 from .. import mcp
-
-
-def _parse_hex_color(value: str) -> tuple[int, int, int] | None:
-    """RGB-only parse (alpha dropped); unified via core.colors.parse_hex_color."""
-    rgba = parse_hex_color(value)
-    return rgba[:3] if rgba else None
 
 
 @mcp.tool()
@@ -289,7 +283,7 @@ async def erase_color(
     if not os.path.exists(filename):
         return f"File {filename} not found"
 
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_rgb(color)
     if rgb is None:
         return f"Invalid color value: {color}"
     r, g, b = rgb

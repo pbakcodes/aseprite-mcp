@@ -65,6 +65,10 @@ _SYSTEM_FONT_DIRS = (
 
 _TTF_EXT = (".ttf", ".otf", ".ttc")
 
+# How far below a system font directory to look; distro layouts are
+# <type>/<family>/<file>, so two levels is enough and keeps the scan cheap.
+_SYSTEM_FONT_DEPTH = 2
+
 Point = tuple[int, int]
 
 
@@ -321,16 +325,31 @@ def _iter_user_fonts():
 
 
 def _iter_system_fonts():
+    """Walk the system font directories, a couple of levels deep.
+
+    Linux distributions never keep fonts directly in /usr/share/fonts: they
+    are filed under a type and a family (``truetype/dejavu/DejaVuSans.ttf``
+    on Debian, ``TTF/DejaVuSans.ttf`` on Arch). A flat listdir therefore
+    reported "no fonts" on exactly the platform this server is tested on,
+    so the walk descends up to _SYSTEM_FONT_DEPTH levels and stops there
+    rather than crawling an arbitrarily deep tree.
+    """
     for directory in _SYSTEM_FONT_DIRS:
         if not os.path.isdir(directory):
             continue
-        try:
-            entries = sorted(os.listdir(directory))
-        except OSError:
-            continue
-        for entry in entries:
-            if entry.lower().endswith(_TTF_EXT):
-                yield os.path.splitext(entry)[0], os.path.join(directory, entry), "truetype"
+        pending = [(directory, 0)]
+        while pending:
+            current, depth = pending.pop(0)
+            try:
+                entries = sorted(os.listdir(current))
+            except OSError:
+                continue
+            for entry in entries:
+                full = os.path.join(current, entry)
+                if entry.lower().endswith(_TTF_EXT) and os.path.isfile(full):
+                    yield os.path.splitext(entry)[0], full, "truetype"
+                elif depth < _SYSTEM_FONT_DEPTH and os.path.isdir(full):
+                    pending.append((full, depth + 1))
 
 
 def available_fonts() -> list[dict]:

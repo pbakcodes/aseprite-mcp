@@ -1,14 +1,8 @@
 import os
 from ..core.commands import AsepriteCommand, lua_escape
 from ..core.lua import FIND_LAYER, NORMALIZE_CEL, PSET, HSL
-from ..core.colors import parse_hex_color
+from ..core.colors import parse_hex_rgb
 from .. import mcp
-
-
-def _parse_hex_color(value: str) -> tuple[int, int, int] | None:
-    """RGB-only parse (alpha dropped); unified via core.colors.parse_hex_color."""
-    rgba = parse_hex_color(value)
-    return rgba[:3] if rgba else None
 
 
 @mcp.tool()
@@ -36,7 +30,7 @@ async def outline_cel(
     if not os.path.exists(filename):
         return f"File {filename} not found"
 
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_rgb(color)
     if rgb is None:
         return f"Invalid color value: {color}"
     r, g, b = rgb
@@ -116,8 +110,8 @@ async def replace_color(
     if not os.path.exists(filename):
         return f"File {filename} not found"
 
-    src = _parse_hex_color(from_color)
-    dst = _parse_hex_color(to_color)
+    src = parse_hex_rgb(from_color)
+    dst = parse_hex_rgb(to_color)
     if src is None or dst is None:
         return "Colors must use #RRGGBB values"
     if tolerance < 0 or tolerance > 255:
@@ -298,8 +292,8 @@ async def apply_dither_gradient(
     if width <= 0 or height <= 0:
         return "Width and height must be > 0"
 
-    start = _parse_hex_color(color_start)
-    end = _parse_hex_color(color_end)
+    start = parse_hex_rgb(color_start)
+    end = parse_hex_rgb(color_end)
     if start is None or end is None:
         return "Colors must use #RRGGBB values"
     r1, g1, b1 = start
@@ -402,8 +396,8 @@ async def apply_dither_pattern(
     if not (0 <= density <= 1):
         return "density must be between 0.0 and 1.0"
 
-    a = _parse_hex_color(color_a)
-    b = _parse_hex_color(color_b)
+    a = parse_hex_rgb(color_a)
+    b = parse_hex_rgb(color_b)
     if a is None or b is None:
         return "Colors must use #RRGGBB values"
     r1, g1, b1 = a
