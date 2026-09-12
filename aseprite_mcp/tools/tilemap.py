@@ -2,23 +2,10 @@ import json
 import os
 from typing import List, Dict, Any
 from ..core.commands import AsepriteCommand, lua_escape
+from ..core.colors import parse_hex_rgb
+from ..core.inputs import InputError, as_int, as_mapping, as_str
 from ..core.lua import FIND_LAYER
 from .. import mcp
-
-
-def _parse_hex_color(value: str) -> tuple[int, int, int] | None:
-    if not value:
-        return None
-    hex_color = value.lstrip("#")
-    if len(hex_color) != 6:
-        return None
-    try:
-        r = int(hex_color[0:2], 16)
-        g = int(hex_color[2:4], 16)
-        b = int(hex_color[4:6], 16)
-    except ValueError:
-        return None
-    return r, g, b
 
 
 @mcp.tool()
@@ -106,16 +93,21 @@ async def draw_on_tile(
         return "Pixels list cannot be empty"
 
     puts = []
-    for pixel in pixels:
-        rgb = _parse_hex_color(pixel.get("color", ""))
-        if rgb is None:
-            return f"Invalid color value: {pixel.get('color')}"
-        r, g, b = rgb
-        x = int(pixel.get("x", 0))
-        y = int(pixel.get("y", 0))
-        puts.append(
-            f"        put(img, {x}, {y}, app.pixelColor.rgba({r}, {g}, {b}, 255))"
-        )
+    try:
+        for index, entry in enumerate(pixels):
+            pixel = as_mapping(entry, index, "pixel")
+            raw = as_str(pixel, "color", "", index, "pixel")
+            rgb = parse_hex_rgb(raw)
+            if rgb is None:
+                raise InputError(f"Invalid color value: {raw}")
+            r, g, b = rgb
+            x = as_int(pixel, "x", 0, index, "pixel")
+            y = as_int(pixel, "y", 0, index, "pixel")
+            puts.append(
+                f"        put(img, {x}, {y}, app.pixelColor.rgba({r}, {g}, {b}, 255))"
+            )
+    except InputError as exc:
+        return str(exc)
     puts_lua = "\n".join(puts)
 
     safe_layer = lua_escape(layer_name)
@@ -184,10 +176,15 @@ async def set_tiles(
         return "Tiles list cannot be empty"
 
     entries = []
-    for t in tiles:
-        entries.append(
-            f"{{{int(t.get('col', 0))},{int(t.get('row', 0))},{int(t.get('tile_index', 0))}}}"
-        )
+    try:
+        for index, entry in enumerate(tiles):
+            tile = as_mapping(entry, index, "tile")
+            col = as_int(tile, "col", 0, index, "tile")
+            row = as_int(tile, "row", 0, index, "tile")
+            tile_index = as_int(tile, "tile_index", 0, index, "tile")
+            entries.append(f"{{{col},{row},{tile_index}}}")
+    except InputError as exc:
+        return str(exc)
     tiles_lua = ", ".join(entries)
 
     safe_layer = lua_escape(layer_name)

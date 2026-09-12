@@ -4,7 +4,8 @@ import os
 from typing import List
 from ..core.commands import AsepriteCommand, lua_escape
 from ..core.lua import FIND_LAYER
-from ..core.colors import parse_hex_color
+from ..core.colors import parse_hex_rgb
+from ..core.inputs import InputError, as_mapping, as_str
 from .. import mcp
 
 # Well-known retro/pixel-art palettes.
@@ -43,10 +44,6 @@ PALETTE_PRESETS = {
     ],
 }
 
-def _parse_hex_color(value: str) -> tuple[int, int, int] | None:
-    """RGB-only parse (alpha dropped); unified via core.colors.parse_hex_color."""
-    rgba = parse_hex_color(value)
-    return rgba[:3] if rgba else None
 
 @mcp.tool()
 async def get_palette(filename: str) -> str:
@@ -91,7 +88,7 @@ async def set_palette(filename: str, colors: List[str]) -> str:
 
     rgb_list = []
     for color in colors:
-        rgb = _parse_hex_color(color)
+        rgb = parse_hex_rgb(color)
         if rgb is None:
             return "Colors must use #RRGGBB values"
         rgb_list.append(rgb)
@@ -143,14 +140,18 @@ async def remap_colors_in_cel_range(
         return "Mappings list cannot be empty"
 
     parsed = []
-    for m in mappings:
-        src = _parse_hex_color(m.get("from") or "")
-        dst = _parse_hex_color(m.get("to") or "")
-        if src is None or dst is None:
-            return "Mappings must use #RRGGBB colors"
-        sr, sg, sb = src
-        dr, dg, db = dst
-        parsed.append((sr, sg, sb, dr, dg, db))
+    try:
+        for index, entry in enumerate(mappings):
+            mapping = as_mapping(entry, index, "mapping")
+            src = parse_hex_rgb(as_str(mapping, "from", "", index, "mapping"))
+            dst = parse_hex_rgb(as_str(mapping, "to", "", index, "mapping"))
+            if src is None or dst is None:
+                return "Mappings must use #RRGGBB colors"
+            sr, sg, sb = src
+            dr, dg, db = dst
+            parsed.append((sr, sg, sb, dr, dg, db))
+    except InputError as exc:
+        return str(exc)
 
     mapping_lua = ", ".join(
         [f"{{{sr},{sg},{sb},{dr},{dg},{db}}}" for sr, sg, sb, dr, dg, db in parsed]
@@ -287,7 +288,7 @@ async def generate_color_ramp(
     Returns:
         JSON array of hex colors ordered darkest to lightest.
     """
-    rgb = _parse_hex_color(base_color)
+    rgb = parse_hex_rgb(base_color)
     if rgb is None:
         return f"Invalid color value: {base_color}"
     if not (2 <= steps <= 16):

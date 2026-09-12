@@ -5,6 +5,12 @@ from ..core.commands import AsepriteCommand, lua_escape
 from .. import mcp
 
 def _parse_layer_frame_ranges(layer_frame_ranges: List[str] | None) -> str:
+    """Build a Lua table literal keyed by layer name.
+
+    The layer name is caller-controlled and lands inside a Lua string
+    literal, so it must be escaped: an unescaped quote would otherwise
+    close the literal and let the rest of the entry run as script.
+    """
     ranges = {}
     if layer_frame_ranges:
         for entry in layer_frame_ranges:
@@ -31,11 +37,12 @@ def _parse_layer_frame_ranges(layer_frame_ranges: List[str] | None) -> str:
     ranges_lua = "{"
     for layer, spans in ranges.items():
         span_list = ",".join([f"{{{s},{e}}}" for s, e in spans])
-        ranges_lua += f"[\"{layer}\"]={{{span_list}}},"
+        ranges_lua += f"[\"{lua_escape(layer)}\"]={{{span_list}}},"
     ranges_lua += "}"
     return ranges_lua
 
 def _parse_overlap_pairs(overlap_pairs: List[str] | None) -> str:
+    """Build a Lua array of {"a","b"} layer-name pairs (escaped, see above)."""
     pairs = []
     if overlap_pairs:
         for entry in overlap_pairs:
@@ -51,7 +58,9 @@ def _parse_overlap_pairs(overlap_pairs: List[str] | None) -> str:
             right = right.strip()
             if left and right:
                 pairs.append((left, right))
-    return "{" + ",".join([f"{{\"{a}\",\"{b}\"}}" for a, b in pairs]) + "}"
+    return "{" + ",".join(
+        [f"{{\"{lua_escape(a)}\",\"{lua_escape(b)}\"}}" for a, b in pairs]
+    ) + "}"
 
 @mcp.tool()
 async def ensure_layers_present(
@@ -158,6 +167,14 @@ async def validate_scene(
     local missing_layers = {}
     local missing_cels = {}
 
+    -- Layer names are caller data: escape them or a name containing a quote
+    -- or a backslash emits a report the caller cannot parse as JSON.
+    local function esc(s)
+        local v = s:gsub("\\\\", "\\\\\\\\")
+        v = v:gsub('"', '\\\\"')
+        return v
+    end
+
     local function find_layer(name)
         for _, layer in ipairs(spr.layers) do
             if layer.name == name then return layer end
@@ -185,13 +202,13 @@ async def validate_scene(
     table.insert(parts, "\\"range\\":{\\"start\\":" .. start_idx .. ",\\"end\\":" .. end_idx .. "},")
     table.insert(parts, "\\"missing_layers\\":[")
     for i, name in ipairs(missing_layers) do
-        table.insert(parts, "\\""..name.."\\"")
+        table.insert(parts, "\\""..esc(name).."\\"")
         if i < #missing_layers then table.insert(parts, ",") end
     end
     table.insert(parts, "],")
     table.insert(parts, "\\"missing_cels\\":[")
     for i, entry in ipairs(missing_cels) do
-        table.insert(parts, '{"layer":"' .. entry.layer .. '","frame":' .. entry.frame .. '}')
+        table.insert(parts, '{"layer":"' .. esc(entry.layer) .. '","frame":' .. entry.frame .. '}')
         if i < #missing_cels then table.insert(parts, ",") end
     end
     table.insert(parts, "]}")
@@ -296,7 +313,7 @@ async def audit_animation(
 
     local function esc(s)
         local v = s:gsub("\\\\", "\\\\\\\\")
-        v = v:gsub('"', '\\"')
+        v = v:gsub('"', '\\\\"')
         return v
     end
 
@@ -593,6 +610,12 @@ async def animation_sanitize(
         return false
     end
 
+    local function esc(s)
+        local v = s:gsub("\\\\", "\\\\\\\\")
+        v = v:gsub('"', '\\\\"')
+        return v
+    end
+
     app.transaction(function()
         if order_names ~= nil then
             local has_groups = false
@@ -785,7 +808,7 @@ async def animation_sanitize(
     table.insert(parts, "\\"overlaps_truncated\\":" .. tostring(overlaps_truncated) .. ",")
     table.insert(parts, "\\"inactive_layers\\":[")
     for i, name in ipairs(analysis.inactive_layers) do
-        table.insert(parts, '\\"' .. name .. '\\"')
+        table.insert(parts, '\\"' .. esc(name) .. '\\"')
         if i < #analysis.inactive_layers then table.insert(parts, ",") end
     end
     table.insert(parts, "]")
@@ -798,7 +821,7 @@ async def animation_sanitize(
             local stats = layer_stats[layer.name]
             if stats then
                 count = count + 1
-                table.insert(parts, '\\"' .. layer.name .. '\\":{{')
+                table.insert(parts, '\\"' .. esc(layer.name) .. '\\":{{')
                 table.insert(parts, '\\"frames_active\\":' .. stats.frames_active .. ",")
                 table.insert(parts, '\\"cel_count\\":' .. stats.cel_count .. ",")
                 table.insert(parts, '\\"full_canvas_cels\\":' .. stats.full_canvas_cels .. ",")
@@ -829,7 +852,7 @@ async def animation_sanitize(
     if #alerts > 0 then
         table.insert(parts, ",\\"alerts\\":[")
         for i, msg in ipairs(alerts) do
-            table.insert(parts, '\\"' .. msg .. '\\"')
+            table.insert(parts, '\\"' .. esc(msg) .. '\\"')
             if i < #alerts then table.insert(parts, ",") end
         end
         table.insert(parts, "]")
@@ -838,7 +861,7 @@ async def animation_sanitize(
     if #overlaps > 0 then
         table.insert(parts, ",\\"overlap_samples\\":[")
         for i, entry in ipairs(overlaps) do
-            table.insert(parts, "{{\\"frame\\":" .. entry.frame .. ",\\"a\\":\\"" .. entry.a .. "\\",\\"b\\":\\"" .. entry.b .. "\\"")
+            table.insert(parts, "{{\\"frame\\":" .. entry.frame .. ",\\"a\\":\\"" .. esc(entry.a) .. "\\",\\"b\\":\\"" .. esc(entry.b) .. "\\"")
             if entry.a_bounds then
                 table.insert(parts, ",\\"a_bounds\\":[" .. entry.a_bounds[1] .. "," .. entry.a_bounds[2] .. "," .. entry.a_bounds[3] .. "," .. entry.a_bounds[4] .. "]")
                 table.insert(parts, ",\\"b_bounds\\":[" .. entry.b_bounds[1] .. "," .. entry.b_bounds[2] .. "," .. entry.b_bounds[3] .. "," .. entry.b_bounds[4] .. "]")

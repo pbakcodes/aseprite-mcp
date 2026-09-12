@@ -3,12 +3,40 @@ from typing import List, Dict, Any
 from ..core.commands import AsepriteCommand, lua_escape
 from ..core.lua import FIND_LAYER, NORMALIZE_CEL, PSET
 from ..core.colors import parse_hex_color
+from ..core.inputs import InputError, as_int, as_mapping, as_point, as_str
 from .. import mcp
 
 
-def _parse_hex_color(value: str) -> tuple[int, int, int, int] | None:
-    """Parse a hex colour to (r, g, b, a); accepts #RRGGBB and #RRGGBBAA."""
-    return parse_hex_color(value)
+_PUT_PIXEL_TEMPLATE = """
+        img:putPixel({x} - cox, {y} - coy, Color({r}, {g}, {b}, {a}))
+    """
+
+
+def _pixel_puts(pixels: List[Dict[str, Any]]) -> str:
+    """Render a caller-supplied pixel list as Lua putPixel lines.
+
+    Coordinates go through ``as_int`` so a string like ``"0) os.execute(...)"``
+    can never reach the generated script, and non-object entries raise
+    InputError instead of AttributeError.
+    """
+    lines = []
+    for index, entry in enumerate(pixels):
+        pixel = as_mapping(entry, index, "pixel")
+        x = as_int(pixel, "x", 0, index, "pixel")
+        y = as_int(pixel, "y", 0, index, "pixel")
+        raw = as_str(pixel, "color", "#000000", index, "pixel")
+        rgb = parse_hex_color(raw)
+        if rgb is None:
+            raise InputError(f"Invalid color value: {raw}")
+        r, g, b, a = rgb
+        lines.append(_PUT_PIXEL_TEMPLATE.format(x=x, y=y, r=r, g=g, b=b, a=a))
+    return "".join(lines)
+
+
+def _points_lua(points: List[Dict[str, int]]) -> str:
+    """Render a caller-supplied point list as a Lua array of {x=,y=} records."""
+    coords = [as_point(entry, index) for index, entry in enumerate(points)]
+    return ", ".join(f"{{x={x}, y={y}}}" for x, y in coords)
 
 
 @mcp.tool()
@@ -48,17 +76,10 @@ async def draw_pixels(filename: str, pixels: List[Dict[str, Any]]) -> str:
     # Add pixel drawing commands. Coordinates are sprite-global; we
     # offset into cel-local space because cel.image:putPixel uses
     # cel-local coordinates.
-    for pixel in pixels:
-        x = pixel.get("x", 0)
-        y = pixel.get("y", 0)
-        rgb = _parse_hex_color(pixel.get("color", "#000000"))
-        if rgb is None:
-            return f"Invalid color value: {pixel.get('color')}"
-        r, g, b, a = rgb
-
-        script += f"""
-        img:putPixel({x} - cox, {y} - coy, Color({r}, {g}, {b}, {a}))
-        """
+    try:
+        script += _pixel_puts(pixels)
+    except InputError as exc:
+        return str(exc)
 
     script += """
     end)
@@ -90,7 +111,7 @@ async def draw_line(filename: str, x1: int, y1: int, x2: int, y2: int, color: st
     if not os.path.exists(filename):
         return f"File {filename} not found"
 
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
     r, g, b, a = rgb
@@ -176,7 +197,7 @@ async def draw_rectangle(filename: str, x: int, y: int, width: int, height: int,
     if width <= 0 or height <= 0:
         return "Width and height must be > 0"
 
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
     r, g, b, a = rgb
@@ -234,7 +255,7 @@ async def fill_area(filename: str, x: int, y: int, color: str = "#000000") -> st
     if not os.path.exists(filename):
         return f"File {filename} not found"
 
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
     r, g, b, a = rgb
@@ -288,7 +309,7 @@ async def draw_circle(filename: str, center_x: int, center_y: int, radius: int, 
     if not os.path.exists(filename):
         return f"File {filename} not found"
 
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
     r, g, b, a = rgb
@@ -377,16 +398,10 @@ async def draw_pixels_at(
         local cox = cel.position.x
         local coy = cel.position.y
     """
-    for pixel in pixels:
-        x = pixel.get("x", 0)
-        y = pixel.get("y", 0)
-        rgb = _parse_hex_color(pixel.get("color", "#000000"))
-        if rgb is None:
-            return f"Invalid color value: {pixel.get('color')}"
-        r, g, b, a = rgb
-        script += f"""
-        img:putPixel({x} - cox, {y} - coy, Color({r}, {g}, {b}, {a}))
-        """
+    try:
+        script += _pixel_puts(pixels)
+    except InputError as exc:
+        return str(exc)
 
     script += """
     end)
@@ -430,7 +445,7 @@ async def draw_line_at(
     if not os.path.exists(filename):
         return f"File {filename} not found"
 
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
     r, g, b, a = rgb
@@ -533,7 +548,7 @@ async def draw_rectangle_at(
     if width <= 0 or height <= 0:
         return "Width and height must be > 0"
 
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
     r, g, b, a = rgb
@@ -608,7 +623,7 @@ async def draw_circle_at(
     if not os.path.exists(filename):
         return f"File {filename} not found"
 
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
     r, g, b, a = rgb
@@ -680,7 +695,7 @@ async def fill_area_at(
     if not os.path.exists(filename):
         return f"File {filename} not found"
 
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
     r, g, b, a = rgb
@@ -747,17 +762,20 @@ async def draw_polygon(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if len(points) < 3:
+    if not points or len(points) < 3:
         return "Polygon requires at least 3 points"
 
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
     r, g, b, a = rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
     fill_flag = "true" if fill else "false"
-    points_lua = ", ".join([f"{{x={p['x']}, y={p['y']}}}" for p in points])
+    try:
+        points_lua = _points_lua(points)
+    except InputError as exc:
+        return str(exc)
 
     script = f"""
     {NORMALIZE_CEL}
@@ -871,16 +889,19 @@ async def draw_path(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if len(points) < 2:
+    if not points or len(points) < 2:
         return "Path requires at least 2 points"
 
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
     r, g, b, a = rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
-    points_lua = ", ".join([f"{{x={p['x']}, y={p['y']}}}" for p in points])
+    try:
+        points_lua = _points_lua(points)
+    except InputError as exc:
+        return str(exc)
 
     script = f"""
     {NORMALIZE_CEL}
@@ -979,10 +1000,10 @@ async def apply_gradient_rect(
     if width <= 0 or height <= 0:
         return "Width and height must be > 0"
 
-    start_rgb = _parse_hex_color(color_start)
+    start_rgb = parse_hex_color(color_start)
     if start_rgb is None:
         return f"Invalid color_start value: {color_start}"
-    end_rgb = _parse_hex_color(color_end)
+    end_rgb = parse_hex_color(color_end)
     if end_rgb is None:
         return f"Invalid color_end value: {color_end}"
 
@@ -1072,7 +1093,7 @@ async def draw_ellipse_at(
     if radius_x <= 0 or radius_y <= 0:
         return "radius_x and radius_y must be > 0"
 
-    rgb = _parse_hex_color(color)
+    rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
     r, g, b, a = rgb
