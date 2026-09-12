@@ -252,6 +252,8 @@ async def export_layers(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
+    if not output_directory.strip():
+        return "Output directory cannot be empty"
     err = reject_traversal(output_directory)
     if err:
         return err

@@ -1,5 +1,6 @@
 import os
 from ..core.commands import AsepriteCommand, lua_escape
+from ..core.inputs import check_canvas_size
 from ..core.lua import FIND_LAYER
 from .. import mcp
 
@@ -182,8 +183,9 @@ async def resize_canvas(filename: str, width: int, height: int) -> str:
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_canvas_size(width, height)
+    if err:
+        return err
 
     script = f"""
     local spr = app.activeSprite
@@ -192,6 +194,9 @@ async def resize_canvas(filename: str, width: int, height: int) -> str:
     app.transaction(function()
         spr:resize({width}, {height})
     end)
+    if spr.width ~= {width} or spr.height ~= {height} then
+        print("ERROR:Aseprite did not apply the requested size") return
+    end
 
     spr:saveAs(spr.filename)
     print("OK")
@@ -216,8 +221,9 @@ async def crop_canvas(filename: str, x: int, y: int, width: int, height: int) ->
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_canvas_size(width, height)
+    if err:
+        return err
 
     script = f"""
     local spr = app.activeSprite

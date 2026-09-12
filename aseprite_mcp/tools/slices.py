@@ -1,6 +1,7 @@
 import json
 import os
 from ..core.commands import AsepriteCommand, lua_escape
+from ..core.inputs import check_extent
 from .. import mcp
 
 _FIND_SLICE = """
@@ -34,8 +35,9 @@ async def create_slice(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_extent(width, height)
+    if err:
+        return err
     if not name:
         return "Slice name cannot be empty"
 
@@ -86,8 +88,9 @@ async def set_slice_center(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_extent(width, height)
+    if err:
+        return err
 
     safe_name = lua_escape(name)
     script = f"""

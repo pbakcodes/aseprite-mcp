@@ -1,6 +1,7 @@
 import os
 from typing import List
 from ..core.commands import AsepriteCommand, lua_escape, reject_traversal
+from ..core.inputs import InputError, lua_string_list
 from ..core.lua import FIND_LAYER
 from .. import mcp
 
@@ -35,7 +36,10 @@ async def copy_layers_between_sprites(
     dst_path = lua_escape(target_filename.replace("\\", "/"))
     replace_flag = "true" if replace else "false"
     create_frames_flag = "true" if create_missing_frames else "false"
-    layers_lua = "{" + ",".join([f"\"{lua_escape(name)}\"" for name in layer_names]) + "}"
+    try:
+        layers_lua = lua_string_list(layer_names, "layer name")
+    except InputError as exc:
+        return str(exc)
 
     script = f"""
     local src = app.open("{src_path}")

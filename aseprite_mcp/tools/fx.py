@@ -2,6 +2,7 @@ import os
 from ..core.commands import AsepriteCommand, lua_escape
 from ..core.lua import FIND_LAYER, NORMALIZE_CEL, PSET, HSL
 from ..core.colors import parse_hex_rgb
+from ..core.inputs import check_extent
 from .. import mcp
 
 
@@ -289,8 +290,9 @@ async def apply_dither_gradient(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_extent(width, height)
+    if err:
+        return err
 
     start = parse_hex_rgb(color_start)
     end = parse_hex_rgb(color_end)
@@ -391,8 +393,9 @@ async def apply_dither_pattern(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_extent(width, height)
+    if err:
+        return err
     if not (0 <= density <= 1):
         return "density must be between 0.0 and 1.0"
 

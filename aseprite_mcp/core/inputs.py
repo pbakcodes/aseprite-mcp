@@ -23,6 +23,46 @@ class InputError(ValueError):
     """A caller-supplied structure had the wrong shape or an unusable value."""
 
 
+# Upper bounds on caller-driven allocation and iteration. Aseprite happily
+# accepts a 2**31 canvas or a 65536-pixel brush and then either allocates
+# until the machine dies or spins in a per-pixel Lua loop for hours, so a
+# single MCP argument is a denial of service without these. Both limits sit
+# far above any real pixel-art use.
+MAX_CANVAS_SIDE = 8192
+MAX_CANVAS_PIXELS = 8192 * 8192
+MAX_BRUSH = 256
+
+
+def check_extent(width: int, height: int) -> str | None:
+    """Validate a width/height pair, returning an error message or None.
+
+    The lower bound keeps the wording every caller already returned, so the
+    only behaviour change is the ceiling. Aseprite will happily be told to
+    fill a 2**31 x 2**31 rectangle and then spend hours on it, which makes
+    an unbounded extent a one-argument denial of service.
+    """
+    if width <= 0 or height <= 0:
+        return "Width and height must be > 0"
+    if width > MAX_CANVAS_SIDE or height > MAX_CANVAS_SIDE:
+        return f"Width and height must be <= {MAX_CANVAS_SIDE}"
+    if width * height > MAX_CANVAS_PIXELS:
+        return f"Width x height must be at most {MAX_CANVAS_PIXELS} pixels"
+    return None
+
+
+# Canvas dimensions use the same ceiling as any other drawn extent.
+check_canvas_size = check_extent
+
+
+def check_thickness(thickness: int) -> str | None:
+    """Validate a stroke width, returning an error message or None."""
+    if thickness < 1:
+        return "thickness must be >= 1"
+    if thickness > MAX_BRUSH:
+        return f"thickness must be <= {MAX_BRUSH}"
+    return None
+
+
 def as_mapping(entry: object, index: int, what: str) -> Mapping:
     """Return `entry` when it is a JSON object, else raise InputError."""
     if not isinstance(entry, Mapping):
@@ -64,6 +104,25 @@ def as_str(entry: Mapping, key: str, default: str, index: int, what: str) -> str
             f"got {type(value).__name__}"
         )
     return value
+
+
+def lua_string_list(values, what: str = "name") -> str:
+    """Render a list of caller-supplied strings as a Lua array literal.
+
+    Each entry must actually be a string: ``lua_escape`` is ``str.replace``
+    under the hood, so a JSON number or object in a ``List[str]`` argument
+    used to raise AttributeError straight out of the tool.
+    """
+    from .commands import lua_escape
+
+    parts = []
+    for index, value in enumerate(values or ()):
+        if not isinstance(value, str):
+            return _fail(
+                f"{what} #{index + 1} must be a string, got {type(value).__name__}"
+            )
+        parts.append(f'"{lua_escape(value)}"')
+    return "{" + ",".join(parts) + "}"
 
 
 def _fail(message: str):

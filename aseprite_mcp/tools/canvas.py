@@ -1,5 +1,6 @@
 import os
 from ..core.commands import AsepriteCommand, lua_escape, reject_traversal
+from ..core.inputs import check_canvas_size
 from ..core.lua import FIND_LAYER
 from .. import mcp
 
@@ -12,8 +13,9 @@ async def create_canvas(width: int, height: int, filename: str = "canvas.aseprit
         height: Height of the canvas in pixels
         filename: Name of the output file (default: canvas.aseprite)
     """
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_canvas_size(width, height)
+    if err:
+        return err
     err = reject_traversal(filename)
     if err:
         return err

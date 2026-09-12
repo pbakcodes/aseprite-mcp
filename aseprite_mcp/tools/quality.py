@@ -2,6 +2,7 @@ import os
 import json
 from typing import List
 from ..core.commands import AsepriteCommand, lua_escape
+from ..core.inputs import InputError, lua_string_list
 from .. import mcp
 
 def _parse_layer_frame_ranges(layer_frame_ranges: List[str] | None) -> str:
@@ -76,7 +77,10 @@ async def ensure_layers_present(
         return "Layer names list cannot be empty"
 
     end_frame_val = "nil" if end_frame is None else str(end_frame)
-    layers_lua = "{" + ",".join([f"\"{lua_escape(name)}\"" for name in layer_names]) + "}"
+    try:
+        layers_lua = lua_string_list(layer_names, "layer name")
+    except InputError as exc:
+        return str(exc)
 
     script = """
     local spr = app.activeSprite
@@ -150,7 +154,10 @@ async def validate_scene(
         return "Required layers list cannot be empty"
 
     end_frame_val = "nil" if end_frame is None else str(end_frame)
-    layers_lua = "{" + ",".join([f"\"{lua_escape(name)}\"" for name in required_layers]) + "}"
+    try:
+        layers_lua = lua_string_list(required_layers, "layer name")
+    except InputError as exc:
+        return str(exc)
 
     script = """
     local spr = app.activeSprite
@@ -255,9 +262,10 @@ async def audit_animation(
     if max_overlaps < 0 or max_out_of_range < 0:
         return "Max limits must be >= 0"
 
-    layers_lua = "nil"
-    if layer_names:
-        layers_lua = "{" + ",".join([f"\"{lua_escape(name)}\"" for name in layer_names]) + "}"
+    try:
+        layers_lua = lua_string_list(layer_names, "layer name") if layer_names else "nil"
+    except InputError as exc:
+        return str(exc)
 
     pairs_lua = _parse_overlap_pairs(overlap_pairs)
     ranges_lua = _parse_layer_frame_ranges(layer_frame_ranges)
@@ -501,17 +509,12 @@ async def animation_sanitize(
     if out_of_range_opacity < 0 or out_of_range_opacity > 255:
         return "out_of_range_opacity must be 0-255"
 
-    layers_lua = "nil"
-    if layer_names:
-        layers_lua = "{" + ",".join([f"\"{lua_escape(name)}\"" for name in layer_names]) + "}"
-
-    order_lua = "nil"
-    if layer_order:
-        order_lua = "{" + ",".join([f"\"{lua_escape(name)}\"" for name in layer_order]) + "}"
-
-    ensure_lua = "nil"
-    if ensure_layers:
-        ensure_lua = "{" + ",".join([f"\"{lua_escape(name)}\"" for name in ensure_layers]) + "}"
+    try:
+        layers_lua = lua_string_list(layer_names, "layer name") if layer_names else "nil"
+        order_lua = lua_string_list(layer_order, "layer name") if layer_order else "nil"
+        ensure_lua = lua_string_list(ensure_layers, "layer name") if ensure_layers else "nil"
+    except InputError as exc:
+        return str(exc)
 
     ranges_lua = _parse_layer_frame_ranges(layer_frame_ranges)
     pairs_lua = _parse_overlap_pairs(overlap_pairs)

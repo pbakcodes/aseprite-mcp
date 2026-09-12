@@ -1,6 +1,7 @@
 import json
 import os
 from ..core.commands import AsepriteCommand, lua_escape
+from ..core.inputs import check_extent
 from ..core.lua import FIND_LAYER
 from .analysis import _FLATTEN_FRAME
 from .. import mcp
@@ -103,8 +104,9 @@ async def get_pixels_rect(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_extent(width, height)
+    if err:
+        return err
 
     safe_layer = lua_escape(layer_name)
     x_end = x + width - 1
@@ -251,8 +253,9 @@ async def get_composite_rect(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_extent(width, height)
+    if err:
+        return err
 
     x_end, y_end = x + width - 1, y + height - 1
     script = f"""

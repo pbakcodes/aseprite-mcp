@@ -1,8 +1,15 @@
 import os
 import json
 from ..core.commands import AsepriteCommand, lua_escape
+from ..core.inputs import InputError, lua_string_list
 from ..core.lua import FIND_LAYER
 from .. import mcp
+
+# Upper bound on caller-driven frame-creation loops. Without it a single call
+# with count=2**31 spins inside Aseprite forever, allocating a frame per
+# iteration: a one-argument denial of service. 4096 frames is far beyond any
+# real sprite and still finishes in well under a second.
+MAX_FRAMES = 4096
 
 @mcp.tool()
 async def add_frames(filename: str, count: int, duration_ms: int | None = None) -> str:
@@ -18,6 +25,8 @@ async def add_frames(filename: str, count: int, duration_ms: int | None = None) 
 
     if count < 1:
         return "Count must be >= 1"
+    if count > MAX_FRAMES:
+        return f"Count must be <= {MAX_FRAMES}"
 
     duration_line = ""
     if duration_ms is not None and duration_ms > 0:
@@ -225,6 +234,8 @@ async def duplicate_frame_range(filename: str, start_frame: int, end_frame: int,
         return f"File {filename} not found"
     if times < 1:
         return "Times must be >= 1"
+    if times > MAX_FRAMES:
+        return f"Times must be <= {MAX_FRAMES}"
 
     script = f"""
     local spr = app.activeSprite
@@ -861,7 +872,10 @@ async def propagate_cels(
         return "Layer names list cannot be empty"
 
     replace_flag = "true" if replace else "false"
-    layers_lua = "{" + ",".join([f"\"{lua_escape(name)}\"" for name in layer_names]) + "}"
+    try:
+        layers_lua = lua_string_list(layer_names, "layer name")
+    except InputError as exc:
+        return str(exc)
 
     script = f"""
     local spr = app.activeSprite

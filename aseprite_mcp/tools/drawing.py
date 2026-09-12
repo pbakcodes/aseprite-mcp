@@ -3,7 +3,11 @@ from typing import List, Dict, Any
 from ..core.commands import AsepriteCommand, lua_escape
 from ..core.lua import FIND_LAYER, NORMALIZE_CEL, PSET
 from ..core.colors import parse_hex_color
-from ..core.inputs import InputError, as_int, as_mapping, as_point, as_str
+from ..core.inputs import (
+    InputError, MAX_CANVAS_SIDE, as_int, as_mapping, as_point, as_str,
+    check_extent,
+    check_thickness,
+)
 from .. import mcp
 
 
@@ -114,6 +118,9 @@ async def draw_line(filename: str, x1: int, y1: int, x2: int, y2: int, color: st
     rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
+    err = check_thickness(thickness)
+    if err:
+        return err
     r, g, b, a = rgb
 
     script = f"""
@@ -194,8 +201,9 @@ async def draw_rectangle(filename: str, x: int, y: int, width: int, height: int,
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_extent(width, height)
+    if err:
+        return err
 
     rgb = parse_hex_color(color)
     if rgb is None:
@@ -448,6 +456,9 @@ async def draw_line_at(
     rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
+    err = check_thickness(thickness)
+    if err:
+        return err
     r, g, b, a = rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
@@ -545,8 +556,9 @@ async def draw_rectangle_at(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_extent(width, height)
+    if err:
+        return err
 
     rgb = parse_hex_color(color)
     if rgb is None:
@@ -895,6 +907,9 @@ async def draw_path(
     rgb = parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
+    err = check_thickness(thickness)
+    if err:
+        return err
     r, g, b, a = rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
@@ -997,8 +1012,9 @@ async def apply_gradient_rect(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_extent(width, height)
+    if err:
+        return err
 
     start_rgb = parse_hex_color(color_start)
     if start_rgb is None:
@@ -1092,6 +1108,8 @@ async def draw_ellipse_at(
         return f"File {filename} not found"
     if radius_x <= 0 or radius_y <= 0:
         return "radius_x and radius_y must be > 0"
+    if radius_x > MAX_CANVAS_SIDE or radius_y > MAX_CANVAS_SIDE:
+        return f"radius_x and radius_y must be <= {MAX_CANVAS_SIDE}"
 
     rgb = parse_hex_color(color)
     if rgb is None:

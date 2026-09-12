@@ -2,6 +2,7 @@ import os
 from ..core.commands import AsepriteCommand, lua_escape
 from ..core.lua import FIND_LAYER, NORMALIZE_CEL, PSET
 from ..core.colors import parse_hex_rgb
+from ..core.inputs import check_extent
 from .. import mcp
 
 
@@ -36,8 +37,9 @@ async def move_region(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_extent(width, height)
+    if err:
+        return err
 
     safe_layer = lua_escape(layer_name)
     script = f"""
@@ -130,8 +132,9 @@ async def copy_region(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_extent(width, height)
+    if err:
+        return err
 
     safe_layer = lua_escape(layer_name)
     safe_target_layer = lua_escape(target_layer_name or layer_name)
@@ -223,8 +226,9 @@ async def erase_region(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
+    err = check_extent(width, height)
+    if err:
+        return err
 
     safe_layer = lua_escape(layer_name)
     script = f"""
