@@ -25,6 +25,40 @@ A Python MCP server that gives AI assistants full control over [Aseprite](https:
 
 Both were created end-to-end by Claude Fable 5 through this server's MCP tools — drawing, checking its own work with scaled `export_frame` previews and `render_onion_skin`, then exporting. The tasks recreate the benchmark from [Draw Me a Swordsman](https://ljvmiranda921.github.io/notebook/2025/07/20/draw-me-a-swordsman/) by Lj Miranda, whose findings inspired this server's expanded toolset.
 
+## How this fork differs from upstream
+
+This repository is a downstream fork of
+[`diivi/aseprite-mcp`](https://github.com/diivi/aseprite-mcp), originally based
+on upstream commit
+[`90d1696a7e41edff89bbd0823ae6a5f86c114bcc`](https://github.com/diivi/aseprite-mcp/commit/90d1696a7e41edff89bbd0823ae6a5f86c114bcc).
+Upstream is capability-first; this fork retains that tool surface while adding
+validation, live-binary testing, coverage gates, and focused hardening.
+
+| Area | Upstream | This fork |
+| --- | --- | --- |
+| CI | General project build and distribution path | Ephemeral live-Aseprite Docker CI on every push to `main`; no GHCR publication, SteamCMD, artifact upload, or Actions cache |
+| Aseprite under test | Not pinned by this fork's test policy | Self-compiled Aseprite **1.3.18.3** with pinned, SHA-256-verified Aseprite source and matching Skia archives |
+| Verification depth | Capability-oriented implementation | **1,682 tests** against real Aseprite; **99.05%** combined statement+branch coverage, a **93%** project gate, an **80%** per-module floor, and **100%** required for `tools/guide.py` |
+| Tool catalog integrity | Manually maintained documentation | Registry/README anti-drift test enforces the exact current surface: **116 tools in 18 categories** |
+| Input contracts | Primarily delegated to individual tools | Shared validation rejects malformed structured input without leaking `AttributeError`/`TypeError`, validates list arguments, and bounds caller-driven counts, dimensions, extents, and stroke widths |
+| Injection and preview hardening | Original generated-Lua and preview behavior | The Lua-injection flaw in quality range/overlap parsing is fixed; preview binds only to loopback and uses a private, tracked PID/process lifecycle that avoids signalling unrelated processes |
+| Error and edge paths | Core tool behavior | Unified colour parsing plus tested fixes for empty/success-shaped responses, hidden-layer compositing, frame/cel overwrite semantics, quality JSON, font discovery, exports, and other error paths |
+
+### Remaining inherited risks / scope
+
+This fork is **not** equivalent to the separately hardened Malloy-based fork.
+It still uses upstream's generated-Lua architecture and intentionally exposes
+`run_lua_script`, which executes arbitrary Aseprite Lua. Run it only through an
+external sandbox with a clean environment, no network access, a hidden `HOME`,
+and a dedicated disposable workspace. See
+[`EVALUATION_FORK.md`](EVALUATION_FORK.md) for the operational threat model and
+required sandbox boundary.
+
+The regular `Dockerfile` and Steam/SteamCMD path are retained as a legacy
+runtime option; CI does not exercise or publish that image. CI uses only
+`Dockerfile.ci`, builds its test image locally on the runner, and discards it
+after the live suite.
+
 ## Tool Categories
 
 | Category | Tools | Description |
